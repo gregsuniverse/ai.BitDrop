@@ -19,7 +19,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QHBoxLayout,
     QLabel, QMenu, QMessageBox, QPushButton, QSystemTrayIcon, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QProgressBar, QFormLayout, QLineEdit,
-    QComboBox, QDialogButtonBox)
+    QComboBox, QDialogButtonBox, QCheckBox, QScrollArea, QWidget)
 
 APP_NAME = "ai.BitDrop"
 APP_ID = "owly-tray"
@@ -259,8 +259,11 @@ class SettingsDialog(QDialog):
     def __init__(self, owner):
         super().__init__(owner.window)
         self.setWindowTitle("Device and security settings")
-        self.resize(660, 450)
-        layout = QVBoxLayout(self)
+        self.resize(760, 700)
+        outer = QVBoxLayout(self)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True)
+        content = QWidget(); content.setMinimumWidth(640)
+        layout = QVBoxLayout(content); scroll.setWidget(content); outer.addWidget(scroll)
         form = QFormLayout()
         self.device_name = QLineEdit(owner.name); self.device_name.setMaxLength(64)
         form.addRow("Visible as", self.device_name)
@@ -277,11 +280,23 @@ class SettingsDialog(QDialog):
         ai_rules = QPushButton("AI on receipt — file types and prompts…")
         ai_rules.clicked.connect(owner.open_ai_rules)
         layout.addWidget(ai_rules)
+        self.scan_files = QCheckBox("Scan received files with ClamAV before opening or AI")
+        self.scan_files.setChecked(owner.settings.value("clamav_enabled", False, type=bool))
+        layout.addWidget(self.scan_files)
+        from file_safety import scanner_status
+        scanner_note = QLabel("ClamAV: " + scanner_status() + ". File-type and SHA-256 change checks are always on. Unsupported, mismatched, corrupt or unchecked files are blocked in this app. Type detection cannot prove authenticity. Detected threats are quarantined; nothing is auto-deleted.")
+        scanner_note.setWordWrap(True); scanner_note.setMinimumHeight(85); layout.addWidget(scanner_note)
+        quarantine = QPushButton("Show quarantine folder")
+        def show_quarantine():
+            from file_safety import STATE
+            folder = STATE / "quarantine"; folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        quarantine.clicked.connect(show_quarantine); layout.addWidget(quarantine)
         note = QLabel("Trusted devices are matched by the certificate proven in their encrypted connection, not by their display name. Allowed transfers still need approval. An empty trusted list refuses everyone in trusted-device mode.")
-        note.setWordWrap(True); layout.addWidget(note)
+        note.setWordWrap(True); note.setMinimumHeight(80); layout.addWidget(note)
         layout.addWidget(QLabel("Trusted devices"))
         self.devices = QTreeWidget(); self.devices.setHeaderLabels(["Label", "Certificate SHA-256"])
-        self.devices.setRootIsDecorated(False); self.devices.setColumnWidth(0, 180)
+        self.devices.setMinimumHeight(120); self.devices.setRootIsDecorated(False); self.devices.setColumnWidth(0, 180)
         for fingerprint, label in sorted(owner.trusted_devices.items()):
             row = QTreeWidgetItem([label, fingerprint]); self.devices.addTopLevelItem(row)
         layout.addWidget(self.devices)
@@ -289,10 +304,10 @@ class SettingsDialog(QDialog):
         remove.clicked.connect(lambda: self.devices.takeTopLevelItem(self.devices.indexOfTopLevelItem(self.devices.currentItem())) if self.devices.currentItem() else None)
         layout.addWidget(remove)
         note = QLabel("To add a device, receive a transfer while in Everyone mode, select its row in the transfers window, and choose Trust device. Certificate changes require trusting the device again. This is not Apple Contacts Only: your computer may remain discoverable, and email/phone contact matching is not implemented.")
-        note.setWordWrap(True); layout.addWidget(note)
+        note.setWordWrap(True); note.setMinimumHeight(80); layout.addWidget(note)
         self.error = QLabel(); self.error.setWordWrap(True); layout.addWidget(self.error)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.save); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
+        buttons.accepted.connect(self.save); buttons.rejected.connect(self.reject); outer.addWidget(buttons)
         self.owner = owner
 
     def save(self):
@@ -305,6 +320,7 @@ class SettingsDialog(QDialog):
             return
         trusted = {self.devices.topLevelItem(i).text(1):self.devices.topLevelItem(i).text(0)
             for i in range(self.devices.topLevelItemCount())}
+        self.owner.settings.setValue("clamav_enabled", self.scan_files.isChecked())
         self.owner.apply_settings(name, self.policy.currentData(), trusted)
         self.accept()
 
@@ -316,6 +332,7 @@ class TrayApp:
         self.settings = settings or QSettings("OwlyTray", "OwlyTray")
         from ai_panel import ReceiptProcessor
         self.ai_receipts = ReceiptProcessor(self.settings, notifier, app)
+        self.security_queue = []; self.security_worker = None
         self.helper = str(helper or INSTALL / "owly-desktop-helper")
         self.directory = Path(str(self.settings.value("directory",
             str(Path.home() / "Downloads/AirDrop"))))
@@ -659,14 +676,51 @@ class TrayApp:
                 path.write_text("\n".join(str(u) for u in urls)[:65536], encoding="utf-8")
                 paths = [str(path)]
             else: paths = event.get("paths", [])
-            if key in self.rows: self.rows[key].setText(2, "Received")
-            body = ", ".join(clean(Path(p).name, 120) for p in paths[:5]) or "Transfer complete"
-            self.notify.notify("ai.BitDrop received", body, {"open":("Open file", lambda p=list(paths): QDesktopServices.openUrl(QUrl.fromLocalFile(p[0])) if p else self.open_folder()),
-                "folder":("Show in folder", self.open_folder),
-                "ai":("Ask AI…", lambda p=list(paths): self.ask_ai(p)),
-                "default":("Open folder", self.open_folder)})
-            if kind == "received": self.ai_receipts.receive(key, paths, self.directory)
+            if key in self.rows: self.rows[key].setText(2, "Checking files…")
+            self.check_paths(paths, lambda results, k=key, t=kind: self.receipt_checked(k, t, results))
             self.refresh_state()
+
+    def check_paths(self, paths, callback, prepare_open=False):
+        if len(self.security_queue) >= 20:
+            self.notify.notify("File checks busy", "Checks were not completed. Opening and AI are blocked; try again later.")
+            return
+        self.security_queue.append((list(paths), callback, prepare_open))
+        self.next_check()
+
+    def next_check(self):
+        if self.security_worker or not self.security_queue: return
+        from file_safety import CheckWorker
+        paths, callback, prepare_open = self.security_queue.pop(0)
+        worker = CheckWorker(paths, self.settings.value("clamav_enabled", False, type=bool), prepare_open)
+        self.security_worker = worker
+        self.app.aboutToQuit.connect(worker.wait)
+        worker.checked.connect(callback)
+        worker.finished.connect(self.check_finished)
+        worker.start()
+
+    def check_finished(self):
+        old = self.security_worker; self.security_worker = None
+        old.deleteLater(); QTimer.singleShot(0, self.next_check)
+
+    def receipt_checked(self, key, kind, results):
+        paths = [path for path, passed, _ in results if passed]
+        blocked = [reason for _, passed, reason in results if not passed]
+        if key in self.rows: self.rows[key].setText(2, "Received" if paths and not blocked else "Blocked / check failed" if not paths else "Partially blocked")
+        if blocked: self.notify.notify("File blocked", clean("; ".join(blocked), 700))
+        if paths:
+            body = ", ".join(clean(Path(p).name, 120) for p in paths[:5]) + " — " + next(message for _, passed, message in results if passed)
+            self.notify.notify("ai.BitDrop received — checks passed", body, {
+                "open": ("Open file", lambda p=paths[0]: self.open_checked(p)),
+                "folder": ("Show in folder", self.open_folder),
+                "ai": ("Ask AI…", lambda p=list(paths): self.ask_ai(p))})
+            if kind == "received": self.ai_receipts.receive(key, paths, self.directory)
+        self.refresh_state()
+
+    def open_checked(self, path):
+        def ready(results):
+            if results and results[0][1]: QDesktopServices.openUrl(QUrl.fromLocalFile(results[0][0]))
+            else: self.notify.notify("File blocked", clean(results[0][2] if results else "No file checked", 700))
+        self.check_paths([path], ready, prepare_open=True)
 
     def answer_selected(self, accepted):
         item = self.table.currentItem()

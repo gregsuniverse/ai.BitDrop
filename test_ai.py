@@ -9,6 +9,10 @@ import ai_panel as ai
 
 app = QApplication.instance() or QApplication([])
 class AITests(unittest.TestCase):
+    def setUp(self):
+        import file_safety
+        temp=tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        patcher=patch.object(file_safety,'STATE',Path(temp.name)/'security');patcher.start();self.addCleanup(patcher.stop)
     def test_payload_and_response(self):
         with tempfile.TemporaryDirectory() as directory:
             p = Path(directory)/'example.txt'; p.write_text('Synthetic test only')
@@ -55,12 +59,16 @@ class ReceiptRuleTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.settings = QSettings(str(self.root/'rules.ini'), QSettings.Format.IniFormat)
-        self.photo = self.root/'PHOTO.JPG'; self.photo.write_bytes(b'synthetic')
+        import file_safety
+        self.state_patch=patch.object(file_safety,'STATE',self.root/'security');self.state_patch.start()
+        from PySide6.QtGui import QImage
+        self.photo = self.root/'PHOTO.JPG'; image=QImage(8,8,QImage.Format.Format_RGB32);image.fill(0xff00ffff);image.save(str(self.photo))
+        self.photo_bytes=self.photo.read_bytes()
         self.pdf = self.root/'notes.pdf'; self.pdf.write_bytes(b'synthetic')
         self.settings.setValue('ai_receipt_rules', json.dumps([
             {'type':'Images','enabled':True,'prompt':'Extract receipt details'},
             {'type':'PDF documents','enabled':True,'prompt':'Summarize PDF'}]))
-    def tearDown(self): self.temp.cleanup()
+    def tearDown(self): self.state_patch.stop();self.temp.cleanup()
     def test_default_off_and_type_linked_prompts(self):
         self.assertEqual(ai.receipt_jobs(self.settings,[self.photo,self.pdf],self.root), [])
         self.settings.setValue('ai_receipt_enabled', True)
@@ -96,7 +104,7 @@ class ReceiptRuleTests(unittest.TestCase):
         self.assertEqual(len(results),1)
         self.assertEqual(results[0].stat().st_mode & 0o777,0o600)
         self.assertIn('Synthetic analysis',results[0].read_text())
-        self.assertEqual(self.photo.read_bytes(),b'synthetic')
+        self.assertEqual(self.photo.read_bytes(),self.photo_bytes)
         self.assertEqual(notify.calls[0][0],'AI analysis complete')
     def test_receipt_runs_worker_once_and_saves_mock_response(self):
         import time

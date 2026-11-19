@@ -18,3 +18,8 @@ dbus-python and PyGObject; their packages retain their own licensing terms.
 
 AirDrop is named only to describe interoperability with Apple's file-transfer
 protocol. This is an independent project, not an Apple product.
+
+Optional ClamAV scanning invokes the separately installed clamscan executable.
+ClamAV and its signature databases are not bundled in ai.BitDrop packages;
+their own licenses and update policies apply. File-type detection invokes the
+separately installed file utility.

@@ -20,7 +20,7 @@ backup.mkdir(parents=True)
 for p in [dest/"owly_tray.py",dest/"owly-desktop-helper",applications/"owly-receive.desktop",
     applications/"owly-tray.desktop",autostart/"owly-tray.desktop",binary_dir/"receive-airdrop"]:
     if p.exists(): shutil.copy2(p,backup/p.name)
-for name in ("owly_tray.py","ai_panel.py","owly-desktop-helper","LICENSE","LICENSE.owly","README.txt","USAGE.md"):
+for name in ("owly_tray.py","ai_panel.py","file_safety.py","owly-desktop-helper","LICENSE","LICENSE.owly","README.txt","USAGE.md"):
     shutil.copy2(here/name,dest/name)
 shutil.copytree(here/"assets",dest/"assets",dirs_exist_ok=True)
 shutil.copytree(here/"assets/icons",home/".local/share/icons/hicolor",dirs_exist_ok=True)

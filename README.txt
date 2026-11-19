@@ -68,3 +68,5 @@ Apple Contacts Only; email/phone identity matching is not implemented.
 AI: Settings → Connect AI, then Ask AI about files. Uploads require Send to OpenAI or an explicitly enabled AI-on-receipt rule. An OpenAI API key and API billing are required. Documents, spreadsheets and images are supported; audio/video are not yet supported.
 
 Full usage guide: USAGE.md, or https://github.com/gregsuniverse/ai.BitDrop/blob/main/USAGE.md
+
+Security: type/hash checks are always on. Optional ClamAV scanning is in Settings; update definitions with freshclam first. Failed checks block Open/AI in this app. Detected threats go to private quarantine; see USAGE.md for limits and recovery.

@@ -15,24 +15,24 @@ Owly radio service handles AWDL; this app does not replace its system package.
 
 ## Install
 
-Download the [v0.1.2 development release](https://github.com/gregsuniverse/ai.BitDrop/releases/tag/v0.1.2). Packages are unsigned and currently x86_64 only.
+Download the [v0.2.0 development release](https://github.com/gregsuniverse/ai.BitDrop/releases/tag/v0.2.0). Packages are unsigned and currently x86_64 only.
 
 ### Fedora KDE (dnf / rpm)
 
-Download and extract [the Fedora bundle](https://github.com/gregsuniverse/ai.BitDrop/releases/download/v0.1.2/aibitdrop-fedora-x86_64.zip), then run this inside the extracted folder:
+Download and extract [the Fedora bundle](https://github.com/gregsuniverse/ai.BitDrop/releases/download/v0.2.0/aibitdrop-fedora-x86_64.zip), then run this inside the extracted folder:
 
 ```sh
-sudo dnf install ./owly-0.4.2-2.aibitdrop.x86_64.rpm ./aibitdrop-0.1.2-1.x86_64.rpm
+sudo dnf install ./owly-0.4.2-2.aibitdrop.x86_64.rpm ./aibitdrop-0.2.0-1.x86_64.rpm
 ```
 
 DNF resolves dependencies. Direct `rpm -Uvh` also works if dependencies are already installed. This package pair passed a Fedora 45 dependency-resolution dry run; a fresh native installation has not been tested.
 
 ### Debian 13 / compatible systems (apt)
 
-Download and extract [the Debian bundle](https://github.com/gregsuniverse/ai.BitDrop/releases/download/v0.1.2/aibitdrop-debian-x86_64.zip), then run:
+Download and extract [the Debian bundle](https://github.com/gregsuniverse/ai.BitDrop/releases/download/v0.2.0/aibitdrop-debian-x86_64.zip), then run:
 
 ```sh
-sudo apt install ./owly_0.4.2-1+aibitdrop1_amd64.deb ./aibitdrop_0.1.2-1_amd64.deb
+sudo apt install ./owly_0.4.2-1+aibitdrop1_amd64.deb ./aibitdrop_0.2.0-1_amd64.deb
 ```
 
 Debian package contents are validated, but installation has not been tested on Debian. These binaries need glibc 2.39 or newer and the declared PySide6 packages. This is not a hosted apt/dnf repository; use the downloaded files.
@@ -42,6 +42,10 @@ Debian package contents are validated, but installation has not been tested on D
 Open **ai.BitDrop** from the application menu, or run `aibitdrop`. On a fresh firewalld system, run `sudo aibitdrop-setup-firewall` to permit receiving on `awdl0`. Choose **Settings → Visible as**, enable receiving, and wait for **Ready**. Turn on **Start at login** in the tray menu if desired.
 
 Use the migration notes below if you previously installed the per-user version. A supported Wi-Fi adapter, NetworkManager, and a logged-in desktop session are required. ai.BitDrop is experimental and is not affiliated with Apple.
+
+## File checks and quarantine
+
+File-type and SHA-256 change checks are always on before ai.BitDrop opens a received file or sends files to AI. **Settings → Scan received files with ClamAV before opening or AI** enables local antivirus scanning. Missing/outdated definitions, errors and incomplete scans block those actions. Detected threats are moved to private quarantine, not deleted. See [the security checks guide](USAGE.md#file-checks-and-quarantine) for setup, supported types and limits.
 
 ## Usage
 
@@ -152,20 +156,20 @@ declares it and its Python/Qt dependencies so the package manager checks them.
 Download the matching pair of packages into the same folder. On Fedora:
 
 ```sh
-sudo dnf install ./owly-0.4.2-2.aibitdrop.x86_64.rpm ./aibitdrop-0.1.2-1.x86_64.rpm
+sudo dnf install ./owly-0.4.2-2.aibitdrop.x86_64.rpm ./aibitdrop-0.2.0-1.x86_64.rpm
 ```
 
 On Debian 13 (trixie), or a compatible distribution with the listed PySide6
 packages available:
 
 ```sh
-sudo apt install ./owly_0.4.2-1+aibitdrop1_amd64.deb ./aibitdrop_0.1.2-1_amd64.deb
+sudo apt install ./owly_0.4.2-1+aibitdrop1_amd64.deb ./aibitdrop_0.2.0-1_amd64.deb
 ```
 
 Direct RPM installation is also supported if dependencies are already installed:
 
 ```sh
-sudo rpm -Uvh ./owly-0.4.2-2.aibitdrop.x86_64.rpm ./aibitdrop-0.1.2-1.x86_64.rpm
+sudo rpm -Uvh ./owly-0.4.2-2.aibitdrop.x86_64.rpm ./aibitdrop-0.2.0-1.x86_64.rpm
 ```
 
 If migrating from the earlier per-user installer, its local launcher overrides

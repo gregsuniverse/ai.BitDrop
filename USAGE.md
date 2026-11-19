@@ -139,3 +139,74 @@ through the tray menu before uninstalling if it was enabled.
 
 For a per-user installation, see [README.txt](README.txt) for the launcher/file
 locations. Removing the app does not remove downloads, settings, or API keys.
+
+## File checks and quarantine
+
+ai.BitDrop 0.2.0 adds always-on type/structure checks and SHA-256 change detection,
+plus optional local ClamAV scanning in Settings. This is independent of OpenAI.
+Files are checked after receipt, before an app-controlled Open action, and before
+an AI upload. AI uses the exact bytes whose hash was checked. Scan failures or
+unknown types do not count as passing. Files are never executed to inspect them.
+
+### Set up ClamAV
+
+On Fedora:
+
+```sh
+sudo dnf install clamav clamav-freshclam file
+sudo freshclam
+sudo systemctl enable --now clamav-freshclam-once.timer
+```
+
+On Debian, install `clamav`, `clamav-freshclam` and `file`, and use your
+distribution's freshclam service to keep signatures updated. Follow the
+[ClamAV scanning documentation](https://docs.clamav.net/manual/Usage/Scanning.html).
+Then enable **Scan received files with ClamAV before opening or AI** in Settings.
+Scanner version/signature information appears in that dialog. Packages recommend
+ClamAV but installation alone does not enable the app setting or configure a
+signature-update service. Virus definitions more than seven days old block scans.
+
+### What the checks mean
+
+- The file extension is compared with content detected by the `file` utility.
+- Supported JPEG/PNG/GIF/WebP images are decoded with bounded dimensions.
+- PDF files get a basic end-marker check, JSON is parsed, and ZIP/Office archives
+  get bounded decompression/CRC and basic document-member checks.
+- SHA-256 records detect later changes to a previously checked path. These are
+  local baselines, not sender-provided hashes or proof of end-to-end authenticity.
+- File symlinks, nonregular files, unrecognized types, corrupt structures and
+  mismatches are blocked from ai.BitDrop's Open/AI actions. HEIC and media types
+  can receive a type check without full codec/structural validation.
+- The initial type allowlist covers the documented AI formats plus ZIP, HEIC/HEIF,
+  MP4/MOV and MP3/WAV. Other types still transfer, but their app Open/AI actions
+  are blocked as unverified. Files over 512 MB, excessive archive expansion,
+  encrypted archives and timeouts also block these actions.
+
+Checks do **not** establish who created a file, prove it is harmless, fully
+validate every media/container format, or replace operating-system protections.
+Changing an already checked file intentionally also triggers the hash-change
+block; use a separately named copy for a deliberate new analysis. The checks
+control ai.BitDrop actions; another application or a file manager can access
+files in the download folder independently.
+
+### Quarantine
+
+ClamAV detections are copied into a private, non-executable `.quarantine` file
+under `~/.local/state/owly-tray/security/quarantine`; the copy is hash-verified
+before the original path is removed. A private JSON sidecar records the original
+path, hash, reason and time. Failed quarantine never deliberately deletes the
+original; the file stays blocked. No automatic restore or deletion is performed.
+Use **Settings → Show quarantine folder** to inspect entries. Do not rename or
+open a quarantined payload casually; a false positive should be reviewed before
+any manual recovery. This folder is not an operating-system sandbox.
+
+Hash records live in `~/.local/state/owly-tray/security/integrity.json`, separate
+from the repository. Notifications distinguish antivirus-off checks, successful
+scans, and blocked/error outcomes. The original AI rules run only for files that
+pass receipt checks, and the upload worker checks again before transmission.
+
+App-controlled Open actions use a private, read-only copy of the checked bytes
+under `~/.local/state/owly-tray/security/verified-open`. This avoids opening a
+download path that might have been replaced after checking. To edit, use your
+viewer's Save As command; the original download is preserved. Verified copies
+remain local and may be removed manually when no viewer is using them.

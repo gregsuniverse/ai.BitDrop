@@ -29,7 +29,7 @@ def save_key(key, path=None):
         if os.path.exists(temporary): os.unlink(temporary)
 
 
-def build_request(paths, prompt, model):
+def build_request(paths, prompt, model, scan=False):
     if not prompt.strip(): raise ValueError('Enter what you would like AI to do.')
     if not paths: raise ValueError('Choose at least one file.')
     content = [{'type': 'input_text', 'text': prompt}]
@@ -43,7 +43,11 @@ def build_request(paths, prompt, model):
             raise ValueError(f'{path.name}: this version supports documents, spreadsheets and images. Audio/video analysis is not available yet.')
         total += path.stat().st_size
         if total > LIMIT: raise ValueError('Choose files totaling at most 20 MB.')
+        from file_safety import check_file
+        import hashlib
+        expected = check_file(path, scan)
         with path.open("rb") as stream: data = stream.read(LIMIT + 1)
+        if hashlib.sha256(data).hexdigest() != expected: raise ValueError("File changed after its safety check; upload blocked.")
         actual_total += len(data)
         if actual_total > LIMIT:
             raise ValueError('Files changed or exceed the upload limit. Choose them again.')
@@ -69,11 +73,11 @@ def response_text(response):
 class RequestWorker(QThread):
     result = Signal(str)
     failed = Signal(str)
-    def __init__(self, paths, prompt, model, key):
-        super().__init__(); self.paths = paths; self.prompt = prompt; self.model = model; self.key = key
+    def __init__(self, paths, prompt, model, key, scan=False):
+        super().__init__(); self.paths = paths; self.prompt = prompt; self.model = model; self.key = key; self.scan = scan
     def run(self):
         try:
-            payload = build_request(self.paths, self.prompt, self.model)
+            payload = build_request(self.paths, self.prompt, self.model, self.scan)
             request = urllib.request.Request('https://api.openai.com/v1/responses',
                 data=json.dumps(payload).encode(), headers={'Authorization': 'Bearer '+self.key,
                 'Content-Type': 'application/json'})
@@ -140,15 +144,15 @@ class AskDialog(QDialog):
         try:
             key = CREDENTIAL.read_text().strip()
             if not key: raise OSError()
-            build_request(self.paths, self.prompt.toPlainText(), self.settings.value('ai_model', 'gpt-4.1-mini'))
+            if not self.prompt.toPlainText().strip(): raise ValueError('Enter a prompt.')
         except OSError:
             self.status.setText('Connect AI first using your OpenAI API key.'); return
         except ValueError as error: self.status.setText(str(error)); return
-        self.worker = RequestWorker(self.paths, self.prompt.toPlainText(), self.settings.value('ai_model', 'gpt-4.1-mini'), key)
+        self.worker = RequestWorker(self.paths, self.prompt.toPlainText(), self.settings.value('ai_model', 'gpt-4.1-mini'), key, self.settings.value('clamav_enabled', False, type=bool))
         QApplication.instance().aboutToQuit.connect(self.worker.wait)
         self.worker.result.connect(self.output.setPlainText); self.worker.result.connect(lambda _: self.status.setText('Analysis complete.'))
         self.worker.failed.connect(self.status.setText); self.worker.finished.connect(lambda: self.send.setEnabled(True))
-        self.send.setEnabled(False); self.status.setText('Sending to OpenAI and analyzing…'); self.worker.start()
+        self.send.setEnabled(False); self.status.setText('Checking files, then sending to OpenAI…'); self.worker.start()
     def closeEvent(self, event):
         if self.worker and self.worker.isRunning():
             self.status.setText('Wait for this request to finish before closing.'); event.ignore()
@@ -295,13 +299,13 @@ class ReceiptProcessor(QObject):
             if not key: raise OSError()
         except OSError:
             self.queue.clear(); self.notifier.notify('AI not connected', 'Automatic analysis skipped. Connect AI in Settings.'); return
-        worker = RequestWorker(files, prompt, self.settings.value('ai_model', 'gpt-4.1-mini'), key)
+        worker = RequestWorker(files, prompt, self.settings.value('ai_model', 'gpt-4.1-mini'), key, self.settings.value('clamav_enabled', False, type=bool))
         self.worker = worker
         QApplication.instance().aboutToQuit.connect(worker.wait)
         worker.result.connect(lambda answer: self.save_answer(answer, files, directory))
         worker.failed.connect(lambda message: self.notifier.notify('Automatic AI analysis failed', message))
         worker.finished.connect(self.finished)
-        self.notifier.notify('Automatic AI analysis', f'Sending {len(files)} matching file(s) to OpenAI using your saved rule.')
+        self.notifier.notify('Automatic AI analysis', f'Checking {len(files)} matching file(s) before OpenAI analysis using your saved rule.')
         worker.start()
     def finished(self):
         old = self.worker; self.worker = None
@@ -312,9 +316,8 @@ class ReceiptProcessor(QObject):
             fd, path = tempfile.mkstemp(prefix='analysis-', suffix='.txt', dir=folder)
             with os.fdopen(fd, 'w') as stream:
                 stream.write('ai.BitDrop AI analysis\nFiles:\n'+'\n'.join(files)+'\n\n'+answer)
-            from PySide6.QtGui import QDesktopServices
-            from PySide6.QtCore import QUrl
+            from file_safety import open_verified
             self.notifier.notify('AI analysis complete', 'Answer saved in AI results.',
-                {'open': ('Open answer', lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(path)))})
+                {'open': ('Open answer', lambda: open_verified(path, self.settings.value('clamav_enabled', False, type=bool), self.notifier))})
         except OSError:
             self.notifier.notify('Could not save AI answer', 'Check the download folder permissions and available space.')

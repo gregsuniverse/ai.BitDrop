@@ -43,6 +43,8 @@ Homepage: https://github.com/gregsuniverse/ai.BitDrop
 Description: {'Nearby file transfer desktop app with optional AI analysis' if name=='aibitdrop' else 'Owly AWDL radio service and CLI'}
  Packaged for ai.BitDrop. Requires a supported Wi-Fi adapter and a desktop session.
 ''')
+    if name == 'aibitdrop':
+        control=stage/'DEBIAN/control';control.write_text(control.read_text()+'Recommends: clamav, clamav-freshclam\n')
     run(tool,'--root-owner-group','-Zxz','--build',stage,output/f'{name}_{version}_amd64.deb')
 
 def rpm(stage, spec, output, tool, work, defines=()):
@@ -63,7 +65,7 @@ def main():
     output=ROOT/'dist'; output.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='aibitdrop-package-') as temporary:
         work=Path(temporary); stage=work/'desktop'; lib=stage/'usr/libexec/aibitdrop'
-        for name in ['owly_tray.py','ai_panel.py']: copy(ROOT/name,lib/name)
+        for name in ['owly_tray.py','ai_panel.py','file_safety.py']: copy(ROOT/name,lib/name)
         copy(helper,lib/helper.name,0o755)
         shutil.copytree(ROOT/'assets',lib/'assets')
         shutil.copytree(ROOT/'assets/icons',stage/'usr/share/icons/hicolor')
@@ -86,7 +88,7 @@ Keywords=AirDrop;Owly;iPhone;AI;
         if args.format in ['deb','all']:
             # Debian copyright convention, in addition to full license texts.
             copy(ROOT/'LICENSE',stage/'usr/share/doc/aibitdrop/copyright')
-            depends=f'libc6 (>= {libc_floor([helper])}), libgcc-s1, python3, python3-pyside6.qtwidgets, python3-pyside6.qtnetwork, python3-dbus, python3-gi, gir1.2-glib-2.0, owly (>= 0.4.2)'
+            depends=f'libc6 (>= {libc_floor([helper])}), libgcc-s1, file, python3, python3-pyside6.qtwidgets, python3-pyside6.qtnetwork, python3-dbus, python3-gi, gir1.2-glib-2.0, owly (>= 0.4.2)'
             deb(stage,'aibitdrop',VERSION+'-1',depends,output,args.dpkg_deb)
         if args.owly_source:
             source=args.owly_source.resolve()

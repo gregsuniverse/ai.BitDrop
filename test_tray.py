@@ -32,11 +32,19 @@ class Tests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         settings = QSettings(str(Path(self.tmp.name)/"settings.ini"), QSettings.Format.IniFormat)
         settings.setValue("directory", self.tmp.name)
+        from unittest.mock import patch
+        import file_safety
+        self.state_patch=patch.object(file_safety,'STATE',Path(self.tmp.name)/'security');self.state_patch.start();self.addCleanup(self.state_patch.stop)
         self.n = FakeNotifications()
         self.tray = TrayApp(self.app, self.n, settings=settings, start=False)
         self.tray.epoch = 7
         self.tray.receiver = FakeReceiver()
     def tearDown(self):
+        import time
+        self.tray.security_queue.clear()
+        if self.tray.security_worker:
+            self.tray.security_worker.wait(30000)
+            for _ in range(10): self.app.processEvents()
         self.tray.stop(); self.tray.tray.hide(); self.tray.window.deleteLater()
         self.tmp.cleanup()
     def request(self, tid, name="photo.jpg"):
@@ -72,6 +80,35 @@ class Tests(unittest.TestCase):
         files = list(Path(self.tmp.name).glob("AirDrop-links-*.txt"))
         self.assertEqual(len(files),1)
         self.assertIn("file:///etc/passwd", files[0].read_text())
+    def wait_for_checks(self):
+        import time
+        deadline=time.monotonic()+3
+        while self.tray.security_worker and time.monotonic()<deadline:
+            self.app.processEvents();time.sleep(.005)
+        self.assertIsNone(self.tray.security_worker)
+
+    def test_mismatched_receipt_never_offers_open_or_starts_ai(self):
+        from unittest.mock import patch
+        path=Path(self.tmp.name)/'fake.jpg';path.write_text('not an image')
+        self.request(99)
+        with patch.object(self.tray.ai_receipts,'receive') as process:
+            self.tray.handle_event({'event':'received','id':99,'paths':[str(path)]})
+            self.assertEqual(self.tray.rows[(7,99)].text(2),'Checking files…')
+            self.wait_for_checks();process.assert_not_called()
+        self.assertIn('Blocked',self.tray.rows[(7,99)].text(2))
+        self.assertFalse(any('open' in actions for _,_,actions in self.n.sent))
+
+    def test_open_action_rechecks_hash_after_receipt(self):
+        from unittest.mock import patch
+        path=Path(self.tmp.name)/'note.txt';path.write_text('original content')
+        self.request(98,'note.txt')
+        self.tray.handle_event({'event':'received','id':98,'paths':[str(path)]})
+        self.wait_for_checks()
+        action=next(actions['open'][1] for _,_,actions in self.n.sent if 'open' in actions)
+        path.write_text('changed content')
+        with patch('owly_tray.QDesktopServices.openUrl') as open_url:
+            action();self.wait_for_checks();open_url.assert_not_called()
+
     def test_remote_text_is_plain_and_bounded(self):
         self.request(1, "<b>name</b>\n" + "X"*10000)
         row = self.tray.rows[(7,1)]

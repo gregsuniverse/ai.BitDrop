@@ -7,7 +7,7 @@ root = Path(__file__).resolve().parent.parent
 binary = root / "owly-desktop-helper"
 if not binary.is_file():
     raise SystemExit("Build the helper first: bash scripts/build-helper.sh")
-names = ["VERSION", "ai_panel.py", "test_ai.py", "owly_tray.py", "install.py", "README.md", "README.txt", "USAGE.md", "LICENSE", "LICENSE.owly",
+names = ["file_safety.py", "test_file_safety.py", "VERSION", "ai_panel.py", "test_ai.py", "owly_tray.py", "install.py", "README.md", "README.txt", "USAGE.md", "LICENSE", "LICENSE.owly",
          "THIRD_PARTY_NOTICES.txt", "owly-desktop-helper", "test_tray.py",
          "test_receiver_protocol.py", "test_send_protocol.py"]
 files = [root / name for name in names]

@@ -4,7 +4,8 @@ Release: 1
 Summary: KDE nearby file transfers with optional AI analysis
 License: MIT
 URL: https://github.com/gregsuniverse/ai.BitDrop
-Requires: python3 python3-pyside6 python3-dbus python3-gobject owly >= 0.4.2
+Requires: file python3 python3-pyside6 python3-dbus python3-gobject owly >= 0.4.2
+Recommends: clamav clamav-freshclam
 %global debug_package %{nil}
 %global __os_install_post %{nil}
 %description
