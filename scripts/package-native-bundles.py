@@ -16,6 +16,6 @@ for family,names,command in families:
     with zipfile.ZipFile(destination,'w',zipfile.ZIP_STORED) as archive:
         for name in names: archive.write(out/name,name)
         archive.writestr('SHA256SUMS',''.join(line+'\n' for line in checksums.splitlines() if line.split('  ',1)[1] in names))
-        for name in ['LICENSE','LICENSE.owly','README.md']:archive.write(root/name,name)
+        for name in ['LICENSE','LICENSE.owly','README.md','USAGE.md']:archive.write(root/name,name)
         archive.writestr('INSTALL.txt',f'ai.BitDrop {version} — MIT licensed\n\nExtract this archive, then run from the extracted folder:\n{command} '+' '.join('./'+n for n in reversed(names))+'\n\nLaunch: aibitdrop\n\nRead README.md for hardware requirements, firewall setup, migration notes and testing limits. These development packages are unsigned.\n')
     print(destination)

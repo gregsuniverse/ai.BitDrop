@@ -6,7 +6,8 @@ Incoming transfers require Accept in a desktop notification or the transfers
 window. Unanswered requests expire after 15 seconds. Sender names are supplied
 by nearby devices and are not verified identities.
 
-The app starts at login. Toggle Start at login in its tray menu to change this.
+The per-user installer enables login startup. Native packages leave it optional.
+Toggle Start at login in the tray menu to change this.
 Quit stops receiving and releases the radio; your saved receiving preference
 is retained for the next launch. Receive for 10 minutes turns receiving off
 after ten minutes. The default download folder is ~/Downloads/AirDrop.
@@ -65,3 +66,5 @@ computer can remain discoverable while requests are restricted. This is not
 Apple Contacts Only; email/phone identity matching is not implemented.
 
 AI: Settings → Connect AI, then Ask AI about files. Uploads require Send to OpenAI or an explicitly enabled AI-on-receipt rule. An OpenAI API key and API billing are required. Documents, spreadsheets and images are supported; audio/video are not yet supported.
+
+Full usage guide: USAGE.md, or https://github.com/gregsuniverse/ai.BitDrop/blob/main/USAGE.md

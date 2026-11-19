@@ -80,7 +80,7 @@ Categories=Network;FileTransfer;
 Keywords=AirDrop;Owly;iPhone;AI;
 ''')
         for name in ['LICENSE','LICENSE.owly']: copy(ROOT/name,stage/'usr/share/licenses/aibitdrop'/name)
-        for name in ['README.md','THIRD_PARTY_NOTICES.txt']: copy(ROOT/name,stage/'usr/share/doc/aibitdrop'/name)
+        for name in ['README.md','USAGE.md','THIRD_PARTY_NOTICES.txt']: copy(ROOT/name,stage/'usr/share/doc/aibitdrop'/name)
         if args.format in ['rpm','all']:
             rpm(stage,ROOT/'packaging/aibitdrop.spec',output,args.rpmbuild,work/'app-rpm', ['--define',f'aibitdrop_stage {stage}','--define',f'aibitdrop_version {VERSION}'])
         if args.format in ['deb','all']:

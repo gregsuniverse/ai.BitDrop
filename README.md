@@ -13,6 +13,45 @@ completion notifications, editable device names, certificate-pinned trusted
 devices, login startup, and recovery after sleep. The existing
 Owly radio service handles AWDL; this app does not replace its system package.
 
+## Install
+
+Download the [v0.1.2 development release](https://github.com/gregsuniverse/ai.BitDrop/releases/tag/v0.1.2). Packages are unsigned and currently x86_64 only.
+
+### Fedora KDE (dnf / rpm)
+
+Download and extract [the Fedora bundle](https://github.com/gregsuniverse/ai.BitDrop/releases/download/v0.1.2/aibitdrop-fedora-x86_64.zip), then run this inside the extracted folder:
+
+```sh
+sudo dnf install ./owly-0.4.2-2.aibitdrop.x86_64.rpm ./aibitdrop-0.1.2-1.x86_64.rpm
+```
+
+DNF resolves dependencies. Direct `rpm -Uvh` also works if dependencies are already installed. This package pair passed a Fedora 45 dependency-resolution dry run; a fresh native installation has not been tested.
+
+### Debian 13 / compatible systems (apt)
+
+Download and extract [the Debian bundle](https://github.com/gregsuniverse/ai.BitDrop/releases/download/v0.1.2/aibitdrop-debian-x86_64.zip), then run:
+
+```sh
+sudo apt install ./owly_0.4.2-1+aibitdrop1_amd64.deb ./aibitdrop_0.1.2-1_amd64.deb
+```
+
+Debian package contents are validated, but installation has not been tested on Debian. These binaries need glibc 2.39 or newer and the declared PySide6 packages. This is not a hosted apt/dnf repository; use the downloaded files.
+
+### First run
+
+Open **ai.BitDrop** from the application menu, or run `aibitdrop`. On a fresh firewalld system, run `sudo aibitdrop-setup-firewall` to permit receiving on `awdl0`. Choose **Settings → Visible as**, enable receiving, and wait for **Ready**. Turn on **Start at login** in the tray menu if desired.
+
+Use the migration notes below if you previously installed the per-user version. A supported Wi-Fi adapter, NetworkManager, and a logged-in desktop session are required. ai.BitDrop is experimental and is not affiliated with Apple.
+
+## Usage
+
+- **Receive:** iPhone Share → AirDrop → your computer; click Accept in the KDE notification.
+- **Send:** tray menu → Send files… → select files → choose your unlocked iPhone → Send. Set the phone to Everyone for 10 Minutes.
+- **AI:** Settings → Connect AI, then Ask AI about files. Automatic file-type rules are a separate, explicit opt-in.
+- **Background:** closing the window keeps the tray app running; Quit stops it.
+
+Read the [full usage guide](USAGE.md) for security modes, custom AI prompts, automatic processing, troubleshooting, data locations and removal.
+
 ## Requirements
 
 - Fedora KDE with a supported Wi-Fi adapter, working Owly installation, and `owlyd`.
