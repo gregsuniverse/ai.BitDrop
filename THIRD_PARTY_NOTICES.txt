@@ -1,0 +1,20 @@
+ai.BitDrop frontend: Copyright (c) 2026 Greg O'Rourke and ai.BitDrop contributors.
+License: MIT; full text in LICENSE.
+
+Owly
+Source: https://github.com/t4t5/owly
+Revision: 6f2e8ea99aed0687558d78a1dd49154ab3a5fa76
+Copyright (c) 2026 T4T5
+License: MIT; full text in LICENSE.owly.
+
+The bundled/generated owly-desktop-helper is built from this revision plus
+patches/desktop-events.patch, which adds structured desktop discovery, receiver
+request/response events, and sender progress/delivery events.
+
+Rust dependencies and versions are recorded in that upstream revision's
+Cargo.lock. Their respective licenses continue to apply. The build script uses
+--locked. The Python frontend depends on separately installed PySide6,
+dbus-python and PyGObject; their packages retain their own licensing terms.
+
+AirDrop is named only to describe interoperability with Apple's file-transfer
+protocol. This is an independent project, not an Apple product.

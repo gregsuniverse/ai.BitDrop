@@ -1,0 +1,264 @@
+--- a/crates/owly-cli/src/airdrop.rs
++++ b/crates/owly-cli/src/airdrop.rs
+@@ -64,6 +64,9 @@
+     /// Accept every request without asking (ASK-3).
+     #[arg(long)]
+     accept: bool,
++    /// JSON-line events on stdout and {id,accept} answers on stdin for a desktop frontend.
++    #[arg(long, conflicts_with = "accept")]
++    json_events: bool,
+     /// Don't announce over mDNS, for when another responder does.
+     #[arg(long)]
+     no_mdns: bool,
+@@ -75,6 +78,9 @@
+ 
+ #[derive(clap::Args)]
+ pub struct BrowseArgs {
++    /// JSON-line events for desktop discovery.
++    #[arg(long)]
++    json_events: bool,
+     #[command(flatten)]
+     on: On,
+     /// How long to browse.
+@@ -87,6 +93,9 @@
+ 
+ #[derive(clap::Args)]
+ pub struct SendArgs {
++    /// JSON-line transfer events for a desktop frontend.
++    #[arg(long)]
++    json_events: bool,
+     #[command(flatten)]
+     on: On,
+     /// The receiver: its name, service ID or AWDL address. The first one
+@@ -140,6 +149,7 @@
+ 
+ /// `owly browse`.
+ pub async fn browse(args: BrowseArgs) -> Result<ExitCode, String> {
++    if args.json_events { return browse_desktop(args).await.map_err(|e| e.to_string()); }
+     async {
+         let (iface, name) = args.on.resolve()?;
+         let _advert = advertise(args.no_ble).await;
+@@ -162,6 +172,7 @@
+ 
+ async fn send_inner(bus: Option<&str>, args: SendArgs) -> io::Result<ExitCode> {
+     let SendArgs {
++        json_events,
+         on,
+         to,
+         mac,
+@@ -222,11 +233,12 @@
+     let printer = tokio::spawn(async move {
+         while let Some(event) = updates.recv().await {
+             match event {
+-                Event::Accepted => eprintln!("accepted"),
+-                Event::Progress(p) => eprint!("\r{} / {} bytes", p.sent, p.total),
+-            }
+-        }
+-        eprintln!();
++                Event::Accepted => { if json_events { desktop_emit(serde_json::json!({"event":"accepted"}))?; } else { eprintln!("accepted"); } },
++                Event::Progress(p) => { if json_events { desktop_emit(serde_json::json!({"event":"progress","sent":p.sent,"total":p.total}))?; } else { eprint!("\r{} / {} bytes", p.sent, p.total); } },
++            }
++        }
++        if !json_events { eprintln!(); }
++        Ok::<(), io::Error>(())
+     });
+     let outcome = sender
+         .send(target.addr, &payload, target.flags, Some(events))
+@@ -234,15 +246,15 @@
+     let _ = printer.await;
+     Ok(match outcome {
+         Outcome::Delivered => {
+-            println!("delivered");
++            if json_events { desktop_emit(serde_json::json!({"event":"delivered"}))?; } else { println!("delivered"); }
+             ExitCode::SUCCESS
+         }
+         Outcome::Declined => {
+-            println!("declined");
++            if json_events { desktop_emit(serde_json::json!({"event":"declined"}))?; } else { println!("declined"); }
+             ExitCode::from(1)
+         }
+         Outcome::Failed(reason) => {
+-            println!("failed: {reason}");
++            if json_events { desktop_emit(serde_json::json!({"event":"failed","reason":reason}))?; } else { println!("failed: {reason}"); }
+             ExitCode::from(2)
+         }
+     })
+@@ -595,6 +607,7 @@
+         dir,
+         port,
+         accept,
++        json_events,
+         no_mdns,
+         flags,
+         ..
+@@ -634,6 +647,9 @@
+         iface.addr
+     );
+ 
++    if json_events {
++        return desktop_events(events).await;
++    }
+     let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+     loop {
+         let event = tokio::select! {
+@@ -698,6 +714,75 @@
+     }
+ }
+ 
++#[derive(serde::Deserialize)]
++#[serde(deny_unknown_fields)]
++struct DesktopAnswer {
++    id: u64,
++    accept: bool,
++}
++
++fn desktop_emit(value: serde_json::Value) -> io::Result<()> {
++    use std::io::Write;
++    let mut out = std::io::stdout().lock();
++    serde_json::to_writer(&mut out, &value)?;
++    out.write_all(b"\n")?;
++    out.flush()
++}
++
++async fn desktop_events(
++    mut events: tokio::sync::mpsc::Receiver<ReceiverEvent>,
++) -> io::Result<ExitCode> {
++    use serde_json::json;
++    let mut pending = std::collections::HashMap::new();
++    let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
++    desktop_emit(json!({"event":"ready"}))?;
++    loop {
++        tokio::select! {
++            _ = tokio::signal::ctrl_c() => return Ok(ExitCode::SUCCESS),
++            line = stdin.next_line() => {
++                let Some(line) = line? else { return Ok(ExitCode::SUCCESS) };
++                if line.len() > 1024 { continue; }
++                let Ok(answer) = serde_json::from_str::<DesktopAnswer>(&line) else { continue };
++                if let Some(request) = pending.remove(&answer.id) {
++                    let request: owly_airdrop::driver::receiver::Request = request;
++                    if answer.accept { request.accept(); } else { request.decline(); }
++                    desktop_emit(json!({"event":"answered","id":answer.id,"accepted":answer.accept}))?;
++                }
++            }
++            event = events.recv() => {
++                let Some(event) = event else { return Ok(ExitCode::SUCCESS) };
++                match event {
++                    ReceiverEvent::Discovered { .. } => {},
++                    ReceiverEvent::Request(request) => {
++                        let files = match &request.ask.offer {
++                            Offer::Files(files) => files.iter().map(|f| json!({"name":f.name,"size":f.size})).collect::<Vec<_>>(),
++                            Offer::Urls(_) => vec![],
++                        };
++                        let urls = match &request.ask.offer { Offer::Urls(urls) => urls.clone(), _ => vec![] };
++                        desktop_emit(json!({"event":"request","id":request.id,
++                            "sender":request.ask.sender_computer_name,"fingerprint":request.peer_fingerprint,"files":files,"urls":urls,"timeout":15}))?;
++                        pending.insert(request.id, request);
++                    },
++                    ReceiverEvent::Withdrawn { id } => {
++                        pending.remove(&id);
++                        desktop_emit(json!({"event":"withdrawn","id":id}))?;
++                    },
++                    ReceiverEvent::Received { id, paths } => {
++                        desktop_emit(json!({"event":"received","id":id,"paths":paths}))?;
++                    },
++                    ReceiverEvent::Urls { id, urls } => {
++                        desktop_emit(json!({"event":"urls","id":id,"urls":urls}))?;
++                    },
++                    ReceiverEvent::Failed { id, reason } => {
++                        pending.remove(&id);
++                        desktop_emit(json!({"event":"failed","id":id,"reason":reason}))?;
++                    },
++                }
++            }
++        }
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+@@ -724,3 +809,37 @@
+         );
+     }
+ }
++
++/// Browse both DNS-SD and AWDL peers: iPhones often do not send mDNS here.
++async fn browse_desktop(args: BrowseArgs) -> io::Result<ExitCode> {
++    let (iface, name) = args.on.resolve()?;
++    let _advert = advertise(args.no_ble).await;
++    let sender = Sender::new(sender::Config::new(name, random_service_id()?))?;
++    let lease = Lease::find(None, &iface.name).await.ok();
++    let limit = Duration::from_secs(args.seconds);
++    let mdns = browse_receivers(&iface, &sender, limit, |r| {
++        let _ = desktop_emit(serde_json::json!({"event":"peer","id":r.instance,"name":r.name}));
++        false
++    });
++    let peers = async {
++        let Some(lease) = lease else { return };
++        let deadline = tokio::time::Instant::now() + limit;
++        let mut seen = BTreeSet::new();
++        while tokio::time::Instant::now() < deadline {
++            for mac in lease.peers().await {
++                let id = mac.to_string();
++                if seen.contains(&id) { continue; }
++                let addr = SocketAddrV6::new(mac.link_local(), AIRDROP_PORT, 0, iface.index);
++                let wait = deadline.saturating_duration_since(tokio::time::Instant::now()).min(Duration::from_secs(2));
++                if let Ok(Ok(Some(r))) = tokio::time::timeout(wait, sender.discover(addr)).await {
++                    let _ = desktop_emit(serde_json::json!({"event":"peer","id":id,"name":r.computer_name}));
++                    seen.insert(id);
++                }
++            }
++            tokio::time::sleep(Duration::from_millis(500)).await;
++        }
++    };
++    let _ = tokio::join!(mdns, peers);
++    desktop_emit(serde_json::json!({"event":"discovery_done"}))?;
++    Ok(ExitCode::SUCCESS)
++}
+--- a/crates/owly-airdrop/Cargo.toml
++++ b/crates/owly-airdrop/Cargo.toml
+@@ -23,12 +23,14 @@
+     "dep:tempfile",
+     "dep:tracing",
+     "dep:nix",
++    "dep:sha2",
+ ]
+ # An mDNS/DNS-SD responder and browser on one interface, for hosts without a
+ # system responder.
+ mdns = ["tokio", "dep:socket2"]
+ 
+ [dependencies]
++sha2 = { version = "0.10", optional = true }
+ flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+ 
+ getrandom = { version = "0.3", optional = true }
+--- a/crates/owly-airdrop/src/driver/receiver.rs
++++ b/crates/owly-airdrop/src/driver/receiver.rs
+@@ -59,6 +59,8 @@
+     pub id: u64,
+     pub peer: SocketAddrV6,
+     pub ask: AskRequest,
++    /// SHA-256 of the certificate whose key was proven in this TLS handshake.
++    pub peer_fingerprint: Option<String>,
+     reply: oneshot::Sender<Answer>,
+ }
+ 
+@@ -286,6 +288,10 @@
+         let mut tls = timeout(HANDSHAKE_TIMEOUT, self.acceptor.accept(stream))
+             .await
+             .map_err(|_| io::Error::from(io::ErrorKind::TimedOut))??;
++        use sha2::{Digest, Sha256};
++        let peer_fingerprint = tls.get_ref().1.peer_certificates()
++            .and_then(|certs| certs.first())
++            .map(|cert| format!("{:x}", Sha256::digest(cert.as_ref())));
+         let mut conn = Connection::new(self.config.clone());
+         let mut buf = vec![0; 64 << 10];
+         let mut timer: Option<Instant> = None;
+@@ -342,6 +348,7 @@
+                             id,
+                             peer: self.peer,
+                             ask,
++                            peer_fingerprint: peer_fingerprint.clone(),
+                             reply,
+                         };
+                         // Nobody listening, or too busy: the prompt goes

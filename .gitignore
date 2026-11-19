@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.venv/
+/build/
+/dist/
+/owly-desktop-helper
+/validation.json
+/desktop-events.patch
+*.log
+*.bak
+
+
+# Local credentials and design previews
+.env
+.env.*
+!.env.example
+*.key
+credentials*.json
+/ai-panel-preview.png
+/ai-rules-preview.png
